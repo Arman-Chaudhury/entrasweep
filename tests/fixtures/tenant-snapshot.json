@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-15T22:00:00Z",
+  "source": "fixture",
+  "users": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "userPrincipalName": "alice@contoso.example",
+      "displayName": "Alice Nguyen",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2023-03-01T12:00:00Z",
+      "lastSignInDateTime": "2026-08-10T14:30:00Z",
+      "passwordPolicies": "None"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "userPrincipalName": "bob@contoso.example",
+      "displayName": "Bob Rivera",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2022-07-15T12:00:00Z",
+      "lastSignInDateTime": "2026-02-01T09:00:00Z",
+      "passwordPolicies": "None"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "userPrincipalName": "carol@contoso.example",
+      "displayName": "Carol Osei",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2025-01-15T12:00:00Z",
+      "lastSignInDateTime": null,
+      "passwordPolicies": "None"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "userPrincipalName": "dave@contoso.example",
+      "displayName": "Dave Kim (offboarded)",
+      "accountEnabled": false,
+      "userType": "Member",
+      "createdDateTime": "2021-11-01T12:00:00Z",
+      "lastSignInDateTime": "2024-05-01T08:00:00Z",
+      "passwordPolicies": "None"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000005",
+      "userPrincipalName": "erin@contoso.example",
+      "displayName": "Erin Walsh",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2020-06-01T12:00:00Z",
+      "lastSignInDateTime": "2026-08-01T10:15:00Z",
+      "passwordPolicies": "DisablePasswordExpiration"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000006",
+      "userPrincipalName": "frank_gmail.example#EXT#@contoso.example",
+      "displayName": "Frank (guest)",
+      "accountEnabled": true,
+      "userType": "Guest",
+      "createdDateTime": "2024-02-20T12:00:00Z",
+      "lastSignInDateTime": "2026-08-12T16:45:00Z",
+      "passwordPolicies": "DisablePasswordExpiration"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000007",
+      "userPrincipalName": "grace@contoso.example",
+      "displayName": "Grace Lee (new hire)",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2026-08-10T12:00:00Z",
+      "lastSignInDateTime": null,
+      "passwordPolicies": "None"
+    }
+  ],
+  "groups": [
+    {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "displayName": "Helpdesk",
+      "members": [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002"
+      ]
+    }
+  ],
+  "directoryRoles": [
+    {
+      "displayName": "Global Administrator",
+      "members": ["00000000-0000-0000-0000-000000000001"]
+    }
+  ],
+  "servicePrincipals": []
+}
