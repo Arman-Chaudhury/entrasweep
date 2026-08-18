@@ -15,7 +15,9 @@ function Export-EsHtmlReport {
         [Parameter(Mandatory)]
         [string] $Path,
 
-        [string] $Title = 'EntraSweep report'
+        [string] $Title = 'EntraSweep report',
+
+        [string] $Previous
     )
 
     begin {
@@ -77,7 +79,12 @@ document.getElementById("filter").addEventListener("input", function () {
         [void]$sb.AppendLine('<title>' + (& $encode $Title) + '</title>')
         [void]$sb.AppendLine('<style>' + $css + '</style></head><body>')
         [void]$sb.AppendLine('<h1>' + (& $encode $Title) + '</h1>')
-        [void]$sb.AppendLine('<p class="meta">Generated ' + [datetime]::UtcNow.ToString('yyyy-MM-dd HH:mm') + ' UTC &middot; ' + $active.Count + ' active finding(s), ' + $accepted.Count + ' accepted</p>')
+        $metaLine = 'Generated ' + [datetime]::UtcNow.ToString('yyyy-MM-dd HH:mm') + ' UTC &middot; ' + $active.Count + ' active finding(s), ' + $accepted.Count + ' accepted'
+        if ($Previous) {
+            $delta = Get-EsReportDelta -Active $active -PreviousPath $Previous
+            $metaLine += ' &middot; since previous: ' + $delta.NewCount + ' new, ' + $delta.ResolvedCount + ' resolved'
+        }
+        [void]$sb.AppendLine('<p class="meta">' + $metaLine + '</p>')
 
         [void]$sb.AppendLine('<div class="tiles">')
         foreach ($sev in @('High', 'Medium', 'Low')) {

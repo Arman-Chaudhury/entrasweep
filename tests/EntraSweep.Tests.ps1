@@ -213,6 +213,137 @@ Describe 'Export-EsReport' {
     }
 }
 
+Describe 'Config tuning' {
+    It 'applies thresholds and disables rules from a config file' {
+        $cfg = Join-Path $TestDrive 'tune.psd1'
+        @'
+@{
+    'stale-account' = @{ StaleDays = 400 }
+    'empty-group'   = @{ Enabled = $false }
+}
+'@ | Set-Content -Path $cfg
+        $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -ConfigPath $cfg)
+        # At 400 days bob is no longer stale (carol still is: never signed in);
+        # empty-group is disabled outright.
+        $findings | Should -HaveCount 8
+        ($findings | Where-Object RuleId -EQ 'stale-account') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'empty-group') | Should -HaveCount 0
+    }
+
+    It 'warns on config keys that match no rule parameter and continues' {
+        $cfg = Join-Path $TestDrive 'bogus.psd1'
+        "@{ 'guest-audit' = @{ Bogus = 5 } }" | Set-Content -Path $cfg
+        $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -ConfigPath $cfg -WarningAction SilentlyContinue)
+        $findings | Should -HaveCount 10
+    }
+}
+
+Describe 'Baseline suppression' {
+    BeforeAll {
+        $baselinePath = Join-Path $TestDrive 'baseline.json'
+        @'
+{
+  "entries": [
+    { "ruleId": "stale-account", "subject": "bob@contoso.example" },
+    { "ruleId": "admin-no-mfa", "subject": "judy@contoso.example", "expires": "2026-01-01" }
+  ]
+}
+'@ | Set-Content -Path $baselinePath
+        $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -BaselinePath $baselinePath)
+    }
+
+    It 'marks matching unexpired entries accepted without dropping them' {
+        $findings | Should -HaveCount 10
+        $accepted = @($findings | Where-Object Accepted)
+        $accepted | Should -HaveCount 1
+        $accepted[0].Subject | Should -Be 'bob@contoso.example'
+    }
+
+    It 'ignores baseline entries that have expired' {
+        ($findings | Where-Object Subject -EQ 'judy@contoso.example').Accepted | Should -BeFalse
+    }
+
+    It 'excludes accepted findings from report totals but lists them' {
+        $out = Join-Path $TestDrive 'baselined.json'
+        $findings | Export-EsReport -Path $out
+        $report = Get-Content -Path $out -Raw | ConvertFrom-Json
+        $report.total | Should -Be 9
+        $report.acceptedCount | Should -Be 1
+        @($report.accepted)[0].Subject | Should -Be 'bob@contoso.example'
+    }
+}
+
+Describe 'Export-EsCsvReport' {
+    It 'writes a flat CSV with an Accepted column' {
+        $out = Join-Path $TestDrive 'findings.csv'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf | Export-EsCsvReport -Path $out
+        $rows = @(Import-Csv -Path $out)
+        $rows | Should -HaveCount 10
+        $rows[0].PSObject.Properties.Name | Should -Contain 'Accepted'
+    }
+
+    It 'writes a header-only file when there are no findings' {
+        $out = Join-Path $TestDrive 'empty.csv'
+        @() | Export-EsCsvReport -Path $out
+        @(Import-Csv -Path $out) | Should -HaveCount 0
+        (Get-Content -Path $out -Raw) | Should -Match 'RuleId'
+    }
+}
+
+Describe 'Report delta (-Previous)' {
+    It 'computes new and resolved counts against a previous report' {
+        $subsetPath = Join-Path $TestDrive 'subset.json'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -Rule 'password-expiry-disabled' |
+            Export-EsReport -Path $subsetPath
+
+        $fullPath = Join-Path $TestDrive 'full.json'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf |
+            Export-EsReport -Path $fullPath -Previous $subsetPath
+
+        $report = Get-Content -Path $fullPath -Raw | ConvertFrom-Json
+        $report.delta.newCount | Should -Be 9
+        $report.delta.resolvedCount | Should -Be 0
+
+        # And the other direction: the subset against the full report.
+        $subset2 = Join-Path $TestDrive 'subset2.json'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -Rule 'password-expiry-disabled' |
+            Export-EsReport -Path $subset2 -Previous $fullPath
+        $report2 = Get-Content -Path $subset2 -Raw | ConvertFrom-Json
+        $report2.delta.newCount | Should -Be 0
+        $report2.delta.resolvedCount | Should -Be 9
+    }
+}
+
+Describe 'entrasweep.ps1 wrapper' {
+    BeforeAll {
+        $wrapperPath = (Resolve-Path (Join-Path $PSScriptRoot '..' 'entrasweep.ps1')).Path
+        $pwshPath = (Get-Process -Id $PID).Path
+    }
+
+    It 'exits 1 when the FailOn gate trips' {
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -FailOn High | Out-Null
+        $LASTEXITCODE | Should -Be 1
+    }
+
+    It 'exits 0 when no active finding reaches the gate' {
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -Rule empty-group -FailOn High | Out-Null
+        $LASTEXITCODE | Should -Be 0
+    }
+
+    It 'writes a baseline that silences the next gated run' {
+        $bl = Join-Path $TestDrive 'wrapper-baseline.json'
+        $html = Join-Path $TestDrive 'wrapper-report.html'
+
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -BaselinePath $bl -UpdateBaseline | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        Test-Path $bl | Should -BeTrue
+
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -BaselinePath $bl -FailOn Low -OutHtml $html | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        Test-Path $html | Should -BeTrue
+    }
+}
+
 Describe 'Export-EsHtmlReport' {
     It 'writes a self-contained dashboard with tiles and rule sections' {
         $out = Join-Path $TestDrive 'report.html'
