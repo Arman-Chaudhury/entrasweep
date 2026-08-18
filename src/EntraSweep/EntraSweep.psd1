@@ -15,6 +15,8 @@
         'Get-EsRuleRegistry'
         'Import-EsConfig'
         'Import-EsBaseline'
+        'Connect-EsGraph'
+        'Export-EsGraphSnapshot'
         'Test-EsStaleAccount'
         'Test-EsPasswordExpiryDisabled'
         'Test-EsDormantLicensedAccount'

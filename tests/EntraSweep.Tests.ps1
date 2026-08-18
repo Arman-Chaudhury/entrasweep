@@ -383,6 +383,82 @@ Describe 'Export-EsHtmlReport' {
     }
 }
 
+Describe 'Graph collector' {
+    It 'follows @odata.nextLink paging' {
+        InModuleScope EntraSweep {
+            Mock Invoke-RestMethod {
+                if ($Uri -match 'page2') {
+                    [pscustomobject]@{ value = @([pscustomobject]@{ id = 'b' }) }
+                }
+                else {
+                    [pscustomobject]@{
+                        value            = @([pscustomobject]@{ id = 'a' })
+                        '@odata.nextLink' = 'https://graph.example/page2'
+                    }
+                }
+            }
+            $items = Invoke-EsGraphRequest -Uri 'https://graph.example/page1' -Header @{}
+            $items | Should -HaveCount 2
+            $items.id | Should -Be @('a', 'b')
+        }
+    }
+
+    It 'retries on 429 honoring Retry-After' {
+        InModuleScope EntraSweep {
+            $script:graphCalls = 0
+            Mock Invoke-RestMethod {
+                $script:graphCalls++
+                if ($script:graphCalls -eq 1) {
+                    $resp = [System.Net.Http.HttpResponseMessage]::new(429)
+                    $null = $resp.Headers.TryAddWithoutValidation('Retry-After', '1')
+                    throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('throttled', $resp)
+                }
+                [pscustomobject]@{ value = @([pscustomobject]@{ id = 'x' }) }
+            }
+            $items = Invoke-EsGraphRequest -Uri 'https://graph.example/users' -Header @{}
+            $items | Should -HaveCount 1
+            $script:graphCalls | Should -Be 2
+        }
+    }
+
+    It 'assembles a schema-valid snapshot from Graph payloads' {
+        InModuleScope EntraSweep {
+            Mock Invoke-EsGraphRequest {
+                switch -Regex ($Uri) {
+                    '/users\?'                { @([pscustomobject]@{
+                                                    id = 'u1'; userPrincipalName = 'a@contoso.example'
+                                                    displayName = 'A'; accountEnabled = $true; userType = 'Member'
+                                                    createdDateTime = '2024-01-01T00:00:00Z'
+                                                    signInActivity = [pscustomobject]@{ lastSignInDateTime = '2026-08-01T00:00:00Z' }
+                                                    passwordPolicies = 'None'; assignedLicenses = @() }) }
+                    'userRegistrationDetails' { @([pscustomobject]@{ id = 'u1'; isMfaRegistered = $true }) }
+                    '/groups\?'               { @([pscustomobject]@{ id = 'g1'; displayName = 'G' }) }
+                    '/groups/g1/members'      { @() }
+                    '/directoryRoles\?'       { @([pscustomobject]@{ id = 'r1'; displayName = 'Global Administrator' }) }
+                    '/directoryRoles/r1/'     { @([pscustomobject]@{ id = 'u1' }) }
+                    '/servicePrincipals'      { @([pscustomobject]@{ id = 's1'; displayName = 'SP'
+                                                    keyCredentials = @(); passwordCredentials = @() }) }
+                    default                   { @() }
+                }
+            }
+            $out = Join-Path $TestDrive 'graph-snap.json'
+            Export-EsGraphSnapshot -OutFile $out -AccessToken 'fake-token' | Out-Null
+
+            $snapshot = Import-EsSnapshot -Path $out
+            $snapshot.Source | Should -Be 'graph'
+            $snapshot.Users | Should -HaveCount 1
+            $snapshot.Users[0].lastSignInDateTime | Should -Not -BeNullOrEmpty
+            $snapshot.Users[0].mfaRegistered | Should -BeTrue
+            $snapshot.DirectoryRoles[0].members | Should -Be @('u1')
+        }
+    }
+
+    It 'requires a token' {
+        { Export-EsGraphSnapshot -OutFile (Join-Path $TestDrive 'x.json') } |
+            Should -Throw '*Connect-EsGraph*'
+    }
+}
+
 Describe 'Module hygiene' {
     It 'exports exactly the functions declared in the manifest' {
         $manifest = Import-PowerShellDataFile (Join-Path $PSScriptRoot '..' 'src' 'EntraSweep' 'EntraSweep.psd1')
