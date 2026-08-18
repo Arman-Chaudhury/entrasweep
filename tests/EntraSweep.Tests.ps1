@@ -8,10 +8,10 @@ BeforeAll {
 Describe 'Import-EsSnapshot' {
     It 'parses the fixture tenant' {
         $snapshot = Import-EsSnapshot -Path $fixturePath
-        $snapshot.Users.Count | Should -Be 7
-        $snapshot.Groups.Count | Should -Be 1
-        $snapshot.DirectoryRoles.Count | Should -Be 1
-        $snapshot.ServicePrincipals.Count | Should -Be 0
+        $snapshot.Users.Count | Should -Be 11
+        $snapshot.Groups.Count | Should -Be 3
+        $snapshot.DirectoryRoles.Count | Should -Be 2
+        $snapshot.ServicePrincipals.Count | Should -Be 4
         $snapshot.Source | Should -Be 'fixture'
         $snapshot.CapturedAt | Should -BeOfType [datetime]
     }
@@ -45,10 +45,11 @@ Describe 'Rule: stale-account' {
         $carol.Severity | Should -Be 'High'
     }
 
-    It 'skips active, disabled, and recently created accounts' {
+    It 'skips active, disabled, recently created, and guest accounts' {
         $findings.Subject | Should -Not -Contain 'alice@contoso.example'
         $findings.Subject | Should -Not -Contain 'dave@contoso.example'
         $findings.Subject | Should -Not -Contain 'grace@contoso.example'
+        $findings.Subject | Should -Not -Contain 'iris_partner.example#EXT#@contoso.example'
         $findings | Should -HaveCount 2
     }
 
@@ -72,12 +73,111 @@ Describe 'Rule: password-expiry-disabled' {
     }
 }
 
+Describe 'Rule: dormant-licensed' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsDormantLicensedAccount -Snapshot $snapshot -AsOf $asOf)
+    }
+
+    It 'flags the disabled-but-licensed account and the dormant licensed account' {
+        $findings | Should -HaveCount 2
+        $findings.Subject | Should -Contain 'dave@contoso.example'
+        $findings.Subject | Should -Contain 'henry@contoso.example'
+    }
+
+    It 'leaves active licensed accounts alone' {
+        $findings.Subject | Should -Not -Contain 'alice@contoso.example'
+        $findings.Subject | Should -Not -Contain 'erin@contoso.example'
+    }
+}
+
+Describe 'Rule: guest-audit' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsGuestAccount -Snapshot $snapshot -AsOf $asOf)
+    }
+
+    It 'flags only the stale guest' {
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'iris_partner.example#EXT#@contoso.example'
+        $findings[0].Severity | Should -Be 'Medium'
+    }
+}
+
+Describe 'Rule: empty-group' {
+    It 'flags explicitly empty groups and skips groups without membership data' {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsEmptyGroup -Snapshot $snapshot)
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'Legacy VPN Users'
+    }
+}
+
+Describe 'Rule: privileged-sprawl' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+    }
+
+    It 'stays quiet under the default cap' {
+        @(Test-EsPrivilegedRoleSprawl -Snapshot $snapshot) | Should -HaveCount 0
+    }
+
+    It 'flags a privileged role above a tightened cap' {
+        $findings = @(Test-EsPrivilegedRoleSprawl -Snapshot $snapshot -MaxMembers 2)
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'Global Administrator'
+        $findings[0].Severity | Should -Be 'High'
+    }
+
+    It 'ignores non-privileged roles even when they exceed the cap' {
+        # Helpdesk Administrator has 2 members, above this cap, but is not in
+        # the privileged set - only Global Administrator may be flagged.
+        $findings = @(Test-EsPrivilegedRoleSprawl -Snapshot $snapshot -MaxMembers 1)
+        $findings.Subject | Should -Not -Contain 'Helpdesk Administrator'
+        $findings.Subject | Should -Contain 'Global Administrator'
+    }
+}
+
+Describe 'Rule: admin-no-mfa' {
+    It 'flags the privileged member with MFA false, skipping unknown and registered' {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsAdminMfaRegistration -Snapshot $snapshot)
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'judy@contoso.example'
+        $findings[0].Severity | Should -Be 'High'
+    }
+}
+
+Describe 'Rule: app-credential-expiry' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsAppCredentialExpiry -Snapshot $snapshot -AsOf $asOf)
+    }
+
+    It 'flags expired credentials High and soon-to-expire Medium' {
+        $findings | Should -HaveCount 2
+        ($findings | Where-Object Subject -EQ 'HR Sync App').Severity | Should -Be 'High'
+        ($findings | Where-Object Subject -EQ 'Billing Exporter').Severity | Should -Be 'Medium'
+    }
+
+    It 'ignores healthy and credential-less service principals' {
+        $findings.Subject | Should -Not -Contain 'Wiki Bot'
+        $findings.Subject | Should -Not -Contain 'Legacy Connector (no creds)'
+    }
+}
+
 Describe 'Invoke-EsAudit' {
     It 'runs the full registry and aggregates findings' {
         $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf)
-        $findings | Should -HaveCount 3
+        $findings | Should -HaveCount 10
         ($findings | Where-Object RuleId -EQ 'stale-account') | Should -HaveCount 2
         ($findings | Where-Object RuleId -EQ 'password-expiry-disabled') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'dormant-licensed') | Should -HaveCount 2
+        ($findings | Where-Object RuleId -EQ 'guest-audit') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'empty-group') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'privileged-sprawl') | Should -HaveCount 0
+        ($findings | Where-Object RuleId -EQ 'admin-no-mfa') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'app-credential-expiry') | Should -HaveCount 2
     }
 
     It 'honors a rule subset' {
@@ -98,9 +198,11 @@ Describe 'Export-EsReport' {
         Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf | Export-EsReport -Path $out
 
         $report = Get-Content -Path $out -Raw | ConvertFrom-Json
-        $report.total | Should -Be 3
-        @($report.findings) | Should -HaveCount 3
-        ($report.bySeverity | Where-Object severity -EQ 'Medium').count | Should -Be 1
+        $report.total | Should -Be 10
+        @($report.findings) | Should -HaveCount 10
+        ($report.bySeverity | Where-Object severity -EQ 'High').count | Should -Be 3
+        ($report.bySeverity | Where-Object severity -EQ 'Medium').count | Should -Be 5
+        ($report.bySeverity | Where-Object severity -EQ 'Low').count | Should -Be 2
         ($report.byRule | Where-Object ruleId -EQ 'stale-account').count | Should -Be 2
     }
 
@@ -108,6 +210,292 @@ Describe 'Export-EsReport' {
         $out = Join-Path $TestDrive 'empty.json'
         @() | Export-EsReport -Path $out
         (Get-Content -Path $out -Raw | ConvertFrom-Json).total | Should -Be 0
+    }
+}
+
+Describe 'Config tuning' {
+    It 'applies thresholds and disables rules from a config file' {
+        $cfg = Join-Path $TestDrive 'tune.psd1'
+        @'
+@{
+    'stale-account' = @{ StaleDays = 400 }
+    'empty-group'   = @{ Enabled = $false }
+}
+'@ | Set-Content -Path $cfg
+        $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -ConfigPath $cfg)
+        # At 400 days bob is no longer stale (carol still is: never signed in);
+        # empty-group is disabled outright.
+        $findings | Should -HaveCount 8
+        ($findings | Where-Object RuleId -EQ 'stale-account') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'empty-group') | Should -HaveCount 0
+    }
+
+    It 'warns on config keys that match no rule parameter and continues' {
+        $cfg = Join-Path $TestDrive 'bogus.psd1'
+        "@{ 'guest-audit' = @{ Bogus = 5 } }" | Set-Content -Path $cfg
+        $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -ConfigPath $cfg -WarningAction SilentlyContinue)
+        $findings | Should -HaveCount 10
+    }
+}
+
+Describe 'Baseline suppression' {
+    BeforeAll {
+        $baselinePath = Join-Path $TestDrive 'baseline.json'
+        @'
+{
+  "entries": [
+    { "ruleId": "stale-account", "subject": "bob@contoso.example" },
+    { "ruleId": "admin-no-mfa", "subject": "judy@contoso.example", "expires": "2026-01-01" }
+  ]
+}
+'@ | Set-Content -Path $baselinePath
+        $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -BaselinePath $baselinePath)
+    }
+
+    It 'marks matching unexpired entries accepted without dropping them' {
+        $findings | Should -HaveCount 10
+        $accepted = @($findings | Where-Object Accepted)
+        $accepted | Should -HaveCount 1
+        $accepted[0].Subject | Should -Be 'bob@contoso.example'
+    }
+
+    It 'ignores baseline entries that have expired' {
+        ($findings | Where-Object Subject -EQ 'judy@contoso.example').Accepted | Should -BeFalse
+    }
+
+    It 'excludes accepted findings from report totals but lists them' {
+        $out = Join-Path $TestDrive 'baselined.json'
+        $findings | Export-EsReport -Path $out
+        $report = Get-Content -Path $out -Raw | ConvertFrom-Json
+        $report.total | Should -Be 9
+        $report.acceptedCount | Should -Be 1
+        @($report.accepted)[0].Subject | Should -Be 'bob@contoso.example'
+    }
+}
+
+Describe 'Export-EsCsvReport' {
+    It 'writes a flat CSV with an Accepted column' {
+        $out = Join-Path $TestDrive 'findings.csv'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf | Export-EsCsvReport -Path $out
+        $rows = @(Import-Csv -Path $out)
+        $rows | Should -HaveCount 10
+        $rows[0].PSObject.Properties.Name | Should -Contain 'Accepted'
+    }
+
+    It 'writes a header-only file when there are no findings' {
+        $out = Join-Path $TestDrive 'empty.csv'
+        @() | Export-EsCsvReport -Path $out
+        @(Import-Csv -Path $out) | Should -HaveCount 0
+        (Get-Content -Path $out -Raw) | Should -Match 'RuleId'
+    }
+}
+
+Describe 'Report delta (-Previous)' {
+    It 'computes new and resolved counts against a previous report' {
+        $subsetPath = Join-Path $TestDrive 'subset.json'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -Rule 'password-expiry-disabled' |
+            Export-EsReport -Path $subsetPath
+
+        $fullPath = Join-Path $TestDrive 'full.json'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf |
+            Export-EsReport -Path $fullPath -Previous $subsetPath
+
+        $report = Get-Content -Path $fullPath -Raw | ConvertFrom-Json
+        $report.delta.newCount | Should -Be 9
+        $report.delta.resolvedCount | Should -Be 0
+
+        # And the other direction: the subset against the full report.
+        $subset2 = Join-Path $TestDrive 'subset2.json'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf -Rule 'password-expiry-disabled' |
+            Export-EsReport -Path $subset2 -Previous $fullPath
+        $report2 = Get-Content -Path $subset2 -Raw | ConvertFrom-Json
+        $report2.delta.newCount | Should -Be 0
+        $report2.delta.resolvedCount | Should -Be 9
+    }
+}
+
+Describe 'entrasweep.ps1 wrapper' {
+    BeforeAll {
+        $wrapperPath = (Resolve-Path (Join-Path $PSScriptRoot '..' 'entrasweep.ps1')).Path
+        $pwshPath = (Get-Process -Id $PID).Path
+    }
+
+    It 'exits 1 when the FailOn gate trips' {
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -FailOn High | Out-Null
+        $LASTEXITCODE | Should -Be 1
+    }
+
+    It 'exits 0 when no active finding reaches the gate' {
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -Rule empty-group -FailOn High | Out-Null
+        $LASTEXITCODE | Should -Be 0
+    }
+
+    It 'writes a baseline that silences the next gated run' {
+        $bl = Join-Path $TestDrive 'wrapper-baseline.json'
+        $html = Join-Path $TestDrive 'wrapper-report.html'
+
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -BaselinePath $bl -UpdateBaseline | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        Test-Path $bl | Should -BeTrue
+
+        & $pwshPath -NoProfile -File $wrapperPath -SnapshotPath $fixturePath -AsOf '2026-08-16' -BaselinePath $bl -FailOn Low -OutHtml $html | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        Test-Path $html | Should -BeTrue
+    }
+}
+
+Describe 'Export-EsHtmlReport' {
+    It 'writes a self-contained dashboard with tiles and rule sections' {
+        $out = Join-Path $TestDrive 'report.html'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf | Export-EsHtmlReport -Path $out -Title 'Contoso sweep'
+
+        $html = Get-Content -Path $out -Raw
+        $html | Should -Match 'Contoso sweep'
+        $html | Should -Match 'Total active'
+        $html | Should -Match 'stale-account'
+        $html | Should -Match 'HR Sync App'
+        $html | Should -Match '10 active finding'
+        $html | Should -Not -Match 'http[s]?://'   # no external assets
+    }
+
+    It 'HTML-encodes attacker-controlled fields' {
+        $out = Join-Path $TestDrive 'xss.html'
+        $finding = [pscustomobject]@{
+            RuleId = 'test-rule'; Severity = 'High'
+            Subject = '<script>alert(1)</script>'; Detail = 'd'; Recommendation = ''
+        }
+        @($finding) | Export-EsHtmlReport -Path $out
+        $html = Get-Content -Path $out -Raw
+        $html | Should -Not -Match '<script>alert'
+        $html | Should -Match '&lt;script&gt;'
+    }
+
+    It 'separates accepted findings from active ones' {
+        $out = Join-Path $TestDrive 'accepted.html'
+        $finding = [pscustomobject]@{
+            RuleId = 'test-rule'; Severity = 'Low'
+            Subject = 's'; Detail = 'd'; Recommendation = ''; Accepted = $true
+        }
+        @($finding) | Export-EsHtmlReport -Path $out
+        $html = Get-Content -Path $out -Raw
+        $html | Should -Match 'Clean sweep'
+        $html | Should -Match '1 accepted \(baselined\)'
+    }
+}
+
+Describe 'Graph collector' {
+    It 'follows @odata.nextLink paging' {
+        InModuleScope EntraSweep {
+            Mock Invoke-RestMethod {
+                if ($Uri -match 'page2') {
+                    [pscustomobject]@{ value = @([pscustomobject]@{ id = 'b' }) }
+                }
+                else {
+                    [pscustomobject]@{
+                        value            = @([pscustomobject]@{ id = 'a' })
+                        '@odata.nextLink' = 'https://graph.example/page2'
+                    }
+                }
+            }
+            $items = Invoke-EsGraphRequest -Uri 'https://graph.example/page1' -Header @{}
+            $items | Should -HaveCount 2
+            $items.id | Should -Be @('a', 'b')
+        }
+    }
+
+    It 'retries on 429 honoring Retry-After' {
+        InModuleScope EntraSweep {
+            $script:graphCalls = 0
+            Mock Invoke-RestMethod {
+                $script:graphCalls++
+                if ($script:graphCalls -eq 1) {
+                    $resp = [System.Net.Http.HttpResponseMessage]::new(429)
+                    $null = $resp.Headers.TryAddWithoutValidation('Retry-After', '1')
+                    throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('throttled', $resp)
+                }
+                [pscustomobject]@{ value = @([pscustomobject]@{ id = 'x' }) }
+            }
+            $items = Invoke-EsGraphRequest -Uri 'https://graph.example/users' -Header @{}
+            $items | Should -HaveCount 1
+            $script:graphCalls | Should -Be 2
+        }
+    }
+
+    It 'assembles a schema-valid snapshot from Graph payloads' {
+        InModuleScope EntraSweep {
+            Mock Invoke-EsGraphRequest {
+                switch -Regex ($Uri) {
+                    '/users\?'                { @([pscustomobject]@{
+                                                    id = 'u1'; userPrincipalName = 'a@contoso.example'
+                                                    displayName = 'A'; accountEnabled = $true; userType = 'Member'
+                                                    createdDateTime = '2024-01-01T00:00:00Z'
+                                                    signInActivity = [pscustomobject]@{ lastSignInDateTime = '2026-08-01T00:00:00Z' }
+                                                    passwordPolicies = 'None'; assignedLicenses = @() }) }
+                    'userRegistrationDetails' { @([pscustomobject]@{ id = 'u1'; isMfaRegistered = $true }) }
+                    '/groups\?'               { @([pscustomobject]@{ id = 'g1'; displayName = 'G' }) }
+                    '/groups/g1/members'      { @() }
+                    '/directoryRoles\?'       { @([pscustomobject]@{ id = 'r1'; displayName = 'Global Administrator' }) }
+                    '/directoryRoles/r1/'     { @([pscustomobject]@{ id = 'u1' }) }
+                    '/servicePrincipals'      { @([pscustomobject]@{ id = 's1'; displayName = 'SP'
+                                                    keyCredentials = @(); passwordCredentials = @() }) }
+                    default                   { @() }
+                }
+            }
+            $out = Join-Path $TestDrive 'graph-snap.json'
+            Export-EsGraphSnapshot -OutFile $out -AccessToken 'fake-token' | Out-Null
+
+            $snapshot = Import-EsSnapshot -Path $out
+            $snapshot.Source | Should -Be 'graph'
+            $snapshot.Users | Should -HaveCount 1
+            $snapshot.Users[0].lastSignInDateTime | Should -Not -BeNullOrEmpty
+            $snapshot.Users[0].mfaRegistered | Should -BeTrue
+            $snapshot.DirectoryRoles[0].members | Should -Be @('u1')
+        }
+    }
+
+    It 'requires a token' {
+        { Export-EsGraphSnapshot -OutFile (Join-Path $TestDrive 'x.json') } |
+            Should -Throw '*Connect-EsGraph*'
+    }
+}
+
+Describe 'AD collector (CSV route)' {
+    BeforeAll {
+        $csvPath = Join-Path $PSScriptRoot 'fixtures' 'ad-export.csv'
+        $outPath = Join-Path $TestDrive 'ad-snapshot.json'
+        Export-EsAdSnapshot -FromCsv $csvPath -OutFile $outPath | Out-Null
+        $snapshot = Import-EsSnapshot -Path $outPath
+    }
+
+    It 'maps AD attributes into the snapshot schema' {
+        $snapshot.Source | Should -Be 'ad-export'
+        $snapshot.Users | Should -HaveCount 3
+
+        $pat = $snapshot.Users | Where-Object userPrincipalName -EQ 'pat@corp.example'
+        [datetime]$pat.lastSignInDateTime | Should -Be ([datetime]::FromFileTimeUtc(133497696000000000))
+
+        $sam = $snapshot.Users | Where-Object userPrincipalName -EQ 'sam@corp.example'
+        $sam.lastSignInDateTime | Should -BeNullOrEmpty
+        $sam.passwordPolicies | Should -Be 'DisablePasswordExpiration'
+    }
+
+    It 'falls back to SamAccountName when the UPN is empty and keeps disabled state' {
+        $lee = $snapshot.Users | Where-Object userPrincipalName -EQ 'lee'
+        $lee | Should -Not -BeNullOrEmpty
+        $lee.accountEnabled | Should -BeFalse
+    }
+
+    It 'produces a snapshot the rule pack can audit' {
+        $findings = @(Invoke-EsAudit -SnapshotPath $outPath -AsOf $asOf)
+        # sam: enabled, never signed in (High stale) + password expiry disabled.
+        $findings.Subject | Should -Contain 'sam@corp.example'
+        ($findings | Where-Object { $_.Subject -eq 'sam@corp.example' -and $_.RuleId -eq 'stale-account' }).Severity |
+            Should -Be 'High'
+    }
+
+    It 'refuses the live route when RSAT is absent' {
+        { Export-EsAdSnapshot -Live -OutFile (Join-Path $TestDrive 'live.json') } |
+            Should -Throw '*ActiveDirectory module*'
     }
 }
 

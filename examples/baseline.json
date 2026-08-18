@@ -1,0 +1,11 @@
+{
+  "updatedAt": "2026-08-16T00:00:00Z",
+  "entries": [
+    {
+      "ruleId": "stale-account",
+      "subject": "svc-scanner@contoso.example",
+      "expires": "2027-01-01",
+      "reason": "Break-glass service account; reviewed quarterly."
+    }
+  ]
+}

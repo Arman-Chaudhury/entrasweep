@@ -12,5 +12,11 @@ function Get-EsRuleRegistry {
     [ordered]@{
         'stale-account'            = 'Test-EsStaleAccount'
         'password-expiry-disabled' = 'Test-EsPasswordExpiryDisabled'
+        'dormant-licensed'         = 'Test-EsDormantLicensedAccount'
+        'guest-audit'              = 'Test-EsGuestAccount'
+        'empty-group'              = 'Test-EsEmptyGroup'
+        'privileged-sprawl'        = 'Test-EsPrivilegedRoleSprawl'
+        'admin-no-mfa'             = 'Test-EsAdminMfaRegistration'
+        'app-credential-expiry'    = 'Test-EsAppCredentialExpiry'
     }
 }

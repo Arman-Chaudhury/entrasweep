@@ -19,7 +19,8 @@ jobs:
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
-          $results = Invoke-ScriptAnalyzer -Path ./src -Recurse -Severity Warning
+          $results = @(Invoke-ScriptAnalyzer -Path ./src -Recurse -Severity Warning) +
+                     @(Invoke-ScriptAnalyzer -Path ./entrasweep.ps1 -Severity Warning)
           if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Output }
           $errors = @($results | Where-Object Severity -eq 'Error')
           if ($errors.Count -gt 0) { throw "PSScriptAnalyzer found $($errors.Count) error(s)." }

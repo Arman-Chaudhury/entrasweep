@@ -15,6 +15,8 @@ function Test-EsStaleAccount {
 
     foreach ($user in $Snapshot.Users) {
         if (-not (Get-EsProperty -Object $user -Name 'accountEnabled' -Default $false)) { continue }
+        # Guest staleness has its own thresholds and remediation: see 'guest-audit'.
+        if ((Get-EsProperty -Object $user -Name 'userType' -Default 'Member') -eq 'Guest') { continue }
 
         $upn        = Get-EsProperty -Object $user -Name 'userPrincipalName' -Default '(unknown upn)'
         $lastSignIn = Get-EsProperty -Object $user -Name 'lastSignInDateTime'
