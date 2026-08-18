@@ -10,6 +10,7 @@
         'Import-EsSnapshot'
         'Invoke-EsAudit'
         'Export-EsReport'
+        'Export-EsHtmlReport'
         'Get-EsRuleRegistry'
         'Test-EsStaleAccount'
         'Test-EsPasswordExpiryDisabled'

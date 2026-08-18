@@ -213,6 +213,45 @@ Describe 'Export-EsReport' {
     }
 }
 
+Describe 'Export-EsHtmlReport' {
+    It 'writes a self-contained dashboard with tiles and rule sections' {
+        $out = Join-Path $TestDrive 'report.html'
+        Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf | Export-EsHtmlReport -Path $out -Title 'Contoso sweep'
+
+        $html = Get-Content -Path $out -Raw
+        $html | Should -Match 'Contoso sweep'
+        $html | Should -Match 'Total active'
+        $html | Should -Match 'stale-account'
+        $html | Should -Match 'HR Sync App'
+        $html | Should -Match '10 active finding'
+        $html | Should -Not -Match 'http[s]?://'   # no external assets
+    }
+
+    It 'HTML-encodes attacker-controlled fields' {
+        $out = Join-Path $TestDrive 'xss.html'
+        $finding = [pscustomobject]@{
+            RuleId = 'test-rule'; Severity = 'High'
+            Subject = '<script>alert(1)</script>'; Detail = 'd'; Recommendation = ''
+        }
+        @($finding) | Export-EsHtmlReport -Path $out
+        $html = Get-Content -Path $out -Raw
+        $html | Should -Not -Match '<script>alert'
+        $html | Should -Match '&lt;script&gt;'
+    }
+
+    It 'separates accepted findings from active ones' {
+        $out = Join-Path $TestDrive 'accepted.html'
+        $finding = [pscustomobject]@{
+            RuleId = 'test-rule'; Severity = 'Low'
+            Subject = 's'; Detail = 'd'; Recommendation = ''; Accepted = $true
+        }
+        @($finding) | Export-EsHtmlReport -Path $out
+        $html = Get-Content -Path $out -Raw
+        $html | Should -Match 'Clean sweep'
+        $html | Should -Match '1 accepted \(baselined\)'
+    }
+}
+
 Describe 'Module hygiene' {
     It 'exports exactly the functions declared in the manifest' {
         $manifest = Import-PowerShellDataFile (Join-Path $PSScriptRoot '..' 'src' 'EntraSweep' 'EntraSweep.psd1')
