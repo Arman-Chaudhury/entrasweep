@@ -32,8 +32,10 @@
     AliasesToExport   = @()
     PrivateData       = @{
         PSData = @{
-            Tags       = @('EntraID', 'ActiveDirectory', 'Identity', 'Security', 'Audit', 'Linux', 'Windows')
-            ProjectUri = 'https://github.com/Arman-Chaudhury/entrasweep'
+            Tags         = @('EntraID', 'ActiveDirectory', 'Identity', 'Security', 'Audit', 'Linux', 'Windows')
+            ProjectUri   = 'https://github.com/Arman-Chaudhury/entrasweep'
+            LicenseUri   = 'https://github.com/Arman-Chaudhury/entrasweep/blob/main/LICENSE'
+            ReleaseNotes = 'v0.1.0: 8-rule identity-hygiene pack, offline-first snapshot audits, HTML/JSON/CSV reports with baselines and deltas, Microsoft Graph and on-prem AD collectors, CI severity gate.'
         }
     }
 }
