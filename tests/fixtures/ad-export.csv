@@ -1,0 +1,4 @@
+"ObjectGUID","UserPrincipalName","SamAccountName","Name","Enabled","whenCreated","lastLogonTimestamp","PasswordNeverExpires"
+"11111111-0000-0000-0000-000000000001","pat@corp.example","pat","Pat Doe","True","2022-03-01T10:00:00","133497696000000000","False"
+"11111111-0000-0000-0000-000000000002","sam@corp.example","sam","Sam Roe","True","2020-01-15T09:00:00","","True"
+"11111111-0000-0000-0000-000000000003","","lee","Lee Vu","False","2019-06-10T08:00:00","132223104000000000","False"

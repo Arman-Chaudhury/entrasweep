@@ -459,6 +459,46 @@ Describe 'Graph collector' {
     }
 }
 
+Describe 'AD collector (CSV route)' {
+    BeforeAll {
+        $csvPath = Join-Path $PSScriptRoot 'fixtures' 'ad-export.csv'
+        $outPath = Join-Path $TestDrive 'ad-snapshot.json'
+        Export-EsAdSnapshot -FromCsv $csvPath -OutFile $outPath | Out-Null
+        $snapshot = Import-EsSnapshot -Path $outPath
+    }
+
+    It 'maps AD attributes into the snapshot schema' {
+        $snapshot.Source | Should -Be 'ad-export'
+        $snapshot.Users | Should -HaveCount 3
+
+        $pat = $snapshot.Users | Where-Object userPrincipalName -EQ 'pat@corp.example'
+        [datetime]$pat.lastSignInDateTime | Should -Be ([datetime]::FromFileTimeUtc(133497696000000000))
+
+        $sam = $snapshot.Users | Where-Object userPrincipalName -EQ 'sam@corp.example'
+        $sam.lastSignInDateTime | Should -BeNullOrEmpty
+        $sam.passwordPolicies | Should -Be 'DisablePasswordExpiration'
+    }
+
+    It 'falls back to SamAccountName when the UPN is empty and keeps disabled state' {
+        $lee = $snapshot.Users | Where-Object userPrincipalName -EQ 'lee'
+        $lee | Should -Not -BeNullOrEmpty
+        $lee.accountEnabled | Should -BeFalse
+    }
+
+    It 'produces a snapshot the rule pack can audit' {
+        $findings = @(Invoke-EsAudit -SnapshotPath $outPath -AsOf $asOf)
+        # sam: enabled, never signed in (High stale) + password expiry disabled.
+        $findings.Subject | Should -Contain 'sam@corp.example'
+        ($findings | Where-Object { $_.Subject -eq 'sam@corp.example' -and $_.RuleId -eq 'stale-account' }).Severity |
+            Should -Be 'High'
+    }
+
+    It 'refuses the live route when RSAT is absent' {
+        { Export-EsAdSnapshot -Live -OutFile (Join-Path $TestDrive 'live.json') } |
+            Should -Throw '*ActiveDirectory module*'
+    }
+}
+
 Describe 'Module hygiene' {
     It 'exports exactly the functions declared in the manifest' {
         $manifest = Import-PowerShellDataFile (Join-Path $PSScriptRoot '..' 'src' 'EntraSweep' 'EntraSweep.psd1')

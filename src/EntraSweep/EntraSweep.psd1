@@ -17,6 +17,7 @@
         'Import-EsBaseline'
         'Connect-EsGraph'
         'Export-EsGraphSnapshot'
+        'Export-EsAdSnapshot'
         'Test-EsStaleAccount'
         'Test-EsPasswordExpiryDisabled'
         'Test-EsDormantLicensedAccount'
