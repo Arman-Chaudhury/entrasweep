@@ -13,6 +13,12 @@
         'Get-EsRuleRegistry'
         'Test-EsStaleAccount'
         'Test-EsPasswordExpiryDisabled'
+        'Test-EsDormantLicensedAccount'
+        'Test-EsGuestAccount'
+        'Test-EsEmptyGroup'
+        'Test-EsPrivilegedRoleSprawl'
+        'Test-EsAdminMfaRegistration'
+        'Test-EsAppCredentialExpiry'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

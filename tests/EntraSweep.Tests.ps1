@@ -8,10 +8,10 @@ BeforeAll {
 Describe 'Import-EsSnapshot' {
     It 'parses the fixture tenant' {
         $snapshot = Import-EsSnapshot -Path $fixturePath
-        $snapshot.Users.Count | Should -Be 7
-        $snapshot.Groups.Count | Should -Be 1
-        $snapshot.DirectoryRoles.Count | Should -Be 1
-        $snapshot.ServicePrincipals.Count | Should -Be 0
+        $snapshot.Users.Count | Should -Be 11
+        $snapshot.Groups.Count | Should -Be 3
+        $snapshot.DirectoryRoles.Count | Should -Be 2
+        $snapshot.ServicePrincipals.Count | Should -Be 4
         $snapshot.Source | Should -Be 'fixture'
         $snapshot.CapturedAt | Should -BeOfType [datetime]
     }
@@ -45,10 +45,11 @@ Describe 'Rule: stale-account' {
         $carol.Severity | Should -Be 'High'
     }
 
-    It 'skips active, disabled, and recently created accounts' {
+    It 'skips active, disabled, recently created, and guest accounts' {
         $findings.Subject | Should -Not -Contain 'alice@contoso.example'
         $findings.Subject | Should -Not -Contain 'dave@contoso.example'
         $findings.Subject | Should -Not -Contain 'grace@contoso.example'
+        $findings.Subject | Should -Not -Contain 'iris_partner.example#EXT#@contoso.example'
         $findings | Should -HaveCount 2
     }
 
@@ -72,12 +73,111 @@ Describe 'Rule: password-expiry-disabled' {
     }
 }
 
+Describe 'Rule: dormant-licensed' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsDormantLicensedAccount -Snapshot $snapshot -AsOf $asOf)
+    }
+
+    It 'flags the disabled-but-licensed account and the dormant licensed account' {
+        $findings | Should -HaveCount 2
+        $findings.Subject | Should -Contain 'dave@contoso.example'
+        $findings.Subject | Should -Contain 'henry@contoso.example'
+    }
+
+    It 'leaves active licensed accounts alone' {
+        $findings.Subject | Should -Not -Contain 'alice@contoso.example'
+        $findings.Subject | Should -Not -Contain 'erin@contoso.example'
+    }
+}
+
+Describe 'Rule: guest-audit' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsGuestAccount -Snapshot $snapshot -AsOf $asOf)
+    }
+
+    It 'flags only the stale guest' {
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'iris_partner.example#EXT#@contoso.example'
+        $findings[0].Severity | Should -Be 'Medium'
+    }
+}
+
+Describe 'Rule: empty-group' {
+    It 'flags explicitly empty groups and skips groups without membership data' {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsEmptyGroup -Snapshot $snapshot)
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'Legacy VPN Users'
+    }
+}
+
+Describe 'Rule: privileged-sprawl' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+    }
+
+    It 'stays quiet under the default cap' {
+        @(Test-EsPrivilegedRoleSprawl -Snapshot $snapshot) | Should -HaveCount 0
+    }
+
+    It 'flags a privileged role above a tightened cap' {
+        $findings = @(Test-EsPrivilegedRoleSprawl -Snapshot $snapshot -MaxMembers 2)
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'Global Administrator'
+        $findings[0].Severity | Should -Be 'High'
+    }
+
+    It 'ignores non-privileged roles even when they exceed the cap' {
+        # Helpdesk Administrator has 2 members, above this cap, but is not in
+        # the privileged set - only Global Administrator may be flagged.
+        $findings = @(Test-EsPrivilegedRoleSprawl -Snapshot $snapshot -MaxMembers 1)
+        $findings.Subject | Should -Not -Contain 'Helpdesk Administrator'
+        $findings.Subject | Should -Contain 'Global Administrator'
+    }
+}
+
+Describe 'Rule: admin-no-mfa' {
+    It 'flags the privileged member with MFA false, skipping unknown and registered' {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsAdminMfaRegistration -Snapshot $snapshot)
+        $findings | Should -HaveCount 1
+        $findings[0].Subject | Should -Be 'judy@contoso.example'
+        $findings[0].Severity | Should -Be 'High'
+    }
+}
+
+Describe 'Rule: app-credential-expiry' {
+    BeforeAll {
+        $snapshot = Import-EsSnapshot -Path $fixturePath
+        $findings = @(Test-EsAppCredentialExpiry -Snapshot $snapshot -AsOf $asOf)
+    }
+
+    It 'flags expired credentials High and soon-to-expire Medium' {
+        $findings | Should -HaveCount 2
+        ($findings | Where-Object Subject -EQ 'HR Sync App').Severity | Should -Be 'High'
+        ($findings | Where-Object Subject -EQ 'Billing Exporter').Severity | Should -Be 'Medium'
+    }
+
+    It 'ignores healthy and credential-less service principals' {
+        $findings.Subject | Should -Not -Contain 'Wiki Bot'
+        $findings.Subject | Should -Not -Contain 'Legacy Connector (no creds)'
+    }
+}
+
 Describe 'Invoke-EsAudit' {
     It 'runs the full registry and aggregates findings' {
         $findings = @(Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf)
-        $findings | Should -HaveCount 3
+        $findings | Should -HaveCount 10
         ($findings | Where-Object RuleId -EQ 'stale-account') | Should -HaveCount 2
         ($findings | Where-Object RuleId -EQ 'password-expiry-disabled') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'dormant-licensed') | Should -HaveCount 2
+        ($findings | Where-Object RuleId -EQ 'guest-audit') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'empty-group') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'privileged-sprawl') | Should -HaveCount 0
+        ($findings | Where-Object RuleId -EQ 'admin-no-mfa') | Should -HaveCount 1
+        ($findings | Where-Object RuleId -EQ 'app-credential-expiry') | Should -HaveCount 2
     }
 
     It 'honors a rule subset' {
@@ -98,9 +198,11 @@ Describe 'Export-EsReport' {
         Invoke-EsAudit -SnapshotPath $fixturePath -AsOf $asOf | Export-EsReport -Path $out
 
         $report = Get-Content -Path $out -Raw | ConvertFrom-Json
-        $report.total | Should -Be 3
-        @($report.findings) | Should -HaveCount 3
-        ($report.bySeverity | Where-Object severity -EQ 'Medium').count | Should -Be 1
+        $report.total | Should -Be 10
+        @($report.findings) | Should -HaveCount 10
+        ($report.bySeverity | Where-Object severity -EQ 'High').count | Should -Be 3
+        ($report.bySeverity | Where-Object severity -EQ 'Medium').count | Should -Be 5
+        ($report.bySeverity | Where-Object severity -EQ 'Low').count | Should -Be 2
         ($report.byRule | Where-Object ruleId -EQ 'stale-account').count | Should -Be 2
     }
 

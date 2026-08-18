@@ -11,7 +11,9 @@
       "userType": "Member",
       "createdDateTime": "2023-03-01T12:00:00Z",
       "lastSignInDateTime": "2026-08-10T14:30:00Z",
-      "passwordPolicies": "None"
+      "passwordPolicies": "None",
+      "assignedLicenses": [{ "skuId": "e5-sku" }],
+      "mfaRegistered": true
     },
     {
       "id": "00000000-0000-0000-0000-000000000002",
@@ -21,7 +23,8 @@
       "userType": "Member",
       "createdDateTime": "2022-07-15T12:00:00Z",
       "lastSignInDateTime": "2026-02-01T09:00:00Z",
-      "passwordPolicies": "None"
+      "passwordPolicies": "None",
+      "assignedLicenses": []
     },
     {
       "id": "00000000-0000-0000-0000-000000000003",
@@ -31,7 +34,8 @@
       "userType": "Member",
       "createdDateTime": "2025-01-15T12:00:00Z",
       "lastSignInDateTime": null,
-      "passwordPolicies": "None"
+      "passwordPolicies": "None",
+      "assignedLicenses": []
     },
     {
       "id": "00000000-0000-0000-0000-000000000004",
@@ -41,7 +45,8 @@
       "userType": "Member",
       "createdDateTime": "2021-11-01T12:00:00Z",
       "lastSignInDateTime": "2024-05-01T08:00:00Z",
-      "passwordPolicies": "None"
+      "passwordPolicies": "None",
+      "assignedLicenses": [{ "skuId": "e3-sku" }]
     },
     {
       "id": "00000000-0000-0000-0000-000000000005",
@@ -51,7 +56,8 @@
       "userType": "Member",
       "createdDateTime": "2020-06-01T12:00:00Z",
       "lastSignInDateTime": "2026-08-01T10:15:00Z",
-      "passwordPolicies": "DisablePasswordExpiration"
+      "passwordPolicies": "DisablePasswordExpiration",
+      "assignedLicenses": [{ "skuId": "e3-sku" }]
     },
     {
       "id": "00000000-0000-0000-0000-000000000006",
@@ -72,6 +78,48 @@
       "createdDateTime": "2026-08-10T12:00:00Z",
       "lastSignInDateTime": null,
       "passwordPolicies": "None"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000008",
+      "userPrincipalName": "henry@contoso.example",
+      "displayName": "Henry Adams",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2023-09-01T12:00:00Z",
+      "lastSignInDateTime": "2026-06-10T11:00:00Z",
+      "passwordPolicies": "None",
+      "assignedLicenses": [{ "skuId": "e3-sku" }, { "skuId": "visio-sku" }]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000009",
+      "userPrincipalName": "iris_partner.example#EXT#@contoso.example",
+      "displayName": "Iris (stale guest)",
+      "accountEnabled": true,
+      "userType": "Guest",
+      "createdDateTime": "2025-03-10T12:00:00Z",
+      "lastSignInDateTime": "2025-09-01T09:30:00Z",
+      "passwordPolicies": "None"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "userPrincipalName": "judy@contoso.example",
+      "displayName": "Judy Moreno",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2022-01-10T12:00:00Z",
+      "lastSignInDateTime": "2026-08-14T08:20:00Z",
+      "passwordPolicies": "None",
+      "mfaRegistered": false
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "userPrincipalName": "kevin@contoso.example",
+      "displayName": "Kevin Park",
+      "accountEnabled": true,
+      "userType": "Member",
+      "createdDateTime": "2023-05-05T12:00:00Z",
+      "lastSignInDateTime": "2026-08-13T17:05:00Z",
+      "passwordPolicies": "None"
     }
   ],
   "groups": [
@@ -82,13 +130,61 @@
         "00000000-0000-0000-0000-000000000001",
         "00000000-0000-0000-0000-000000000002"
       ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "displayName": "Legacy VPN Users",
+      "members": []
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000003",
+      "displayName": "Distribution Archive"
     }
   ],
   "directoryRoles": [
     {
       "displayName": "Global Administrator",
-      "members": ["00000000-0000-0000-0000-000000000001"]
+      "members": [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000010",
+        "00000000-0000-0000-0000-000000000011"
+      ]
+    },
+    {
+      "displayName": "Helpdesk Administrator",
+      "members": [
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000008"
+      ]
     }
   ],
-  "servicePrincipals": []
+  "servicePrincipals": [
+    {
+      "id": "20000000-0000-0000-0000-000000000001",
+      "displayName": "HR Sync App",
+      "passwordCredentials": [
+        { "displayName": "prod secret", "endDateTime": "2026-08-01T00:00:00Z" }
+      ],
+      "keyCredentials": []
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000002",
+      "displayName": "Billing Exporter",
+      "passwordCredentials": [],
+      "keyCredentials": [
+        { "displayName": "signing cert", "endDateTime": "2026-09-05T00:00:00Z" }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000003",
+      "displayName": "Wiki Bot",
+      "passwordCredentials": [
+        { "displayName": "rotated 2026", "endDateTime": "2027-08-01T00:00:00Z" }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000004",
+      "displayName": "Legacy Connector (no creds)"
+    }
+  ]
 }
