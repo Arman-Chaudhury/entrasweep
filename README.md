@@ -1,22 +1,28 @@
 # entrasweep
 
-**Identity-hygiene auditor for Microsoft Entra ID and on-prem Active Directory,
-written in PowerShell 7.**
+**A checkup tool for the user accounts a company keeps in Microsoft's systems.**
 
-EntraSweep takes a *snapshot* of directory state — collected live from Microsoft
-Graph, exported from on-prem AD, or hand-written as a fixture — and sweeps it with
-a pack of read-only hygiene rules, then renders the findings as an HTML dashboard,
-JSON, and CSV, with baselines, run-over-run deltas, and a CI/scheduler exit-code
-gate.
+Every company that runs on Microsoft has a directory of user accounts (Entra ID
+in the cloud, Active Directory on their own servers). Over time it fills with
+junk: people who left but still have accounts, admins without two-factor login,
+licenses nobody uses, groups with no members. Each one is a security hole or a
+wasted dollar, and finding them by hand means clicking through hundreds of
+screens.
+
+entrasweep takes a snapshot of that directory and checks it against eight rules
+for that kind of problem, then gives you a report you can open in a browser
+(plus spreadsheet and JSON versions). Run it again next month and it shows you
+what changed. It only ever reads: it suggests fixes but never makes them. I
+wrote it in PowerShell because that is what Windows admins actually use.
 
 ```
 snapshot (JSON) ──► rule pack ──► findings ──► HTML / JSON / CSV + exit code
 ```
 
-**Offline-first by design:** rules never talk to an API, so the whole engine runs
-and tests on any OS — including a Linux CI runner with no tenant and no
-credentials. Live collectors are thin adapters that produce snapshots.
-EntraSweep is strictly read-only: it recommends remediations, it never performs them.
+The rules never talk to Microsoft directly. They work on a saved snapshot, so
+the whole thing runs and tests on any computer, even one with no Microsoft
+account at all. The pieces that pull live data are small adapters whose only job
+is to produce a snapshot.
 
 ## The rules
 
